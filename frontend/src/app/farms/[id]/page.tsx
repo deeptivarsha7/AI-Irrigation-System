@@ -324,6 +324,11 @@ function FarmDetailContent({ farmId }: { farmId: number }) {
                 <span className="text-xs font-semibold px-3 py-1.5 rounded-full capitalize" style={{ backgroundColor: `${COLORS.cream}c0`, color: COLORS.forest, fontFamily: "var(--font-mono)" }}>
                   {farm.soil_type} soil
                 </span>
+                {farm.crop_type && farm.crop_type !== "unspecified" && (
+                  <span className="text-xs font-semibold px-3 py-1.5 rounded-full capitalize" style={{ backgroundColor: `${COLORS.sunDeep}18`, color: COLORS.sunDeep, fontFamily: "var(--font-mono)" }}>
+                    🌾 {farm.crop_type}
+                  </span>
+                )}
               </div>
             </div>
 

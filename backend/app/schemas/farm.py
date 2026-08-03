@@ -10,6 +10,7 @@ class FarmCreate(BaseModel):
     longitude: float
     area_hectares: float
     soil_type: str
+    crop_type: str
 
 
 class FarmUpdate(BaseModel):
@@ -19,6 +20,7 @@ class FarmUpdate(BaseModel):
     longitude: Optional[float] = None
     area_hectares: Optional[float] = None
     soil_type: Optional[str] = None
+    crop_type: Optional[str] = None
 
 
 class FarmResponse(BaseModel):
@@ -30,6 +32,7 @@ class FarmResponse(BaseModel):
     longitude: float
     area_hectares: float
     soil_type: str
+    crop_type: str
     created_at: datetime
 
     class Config:

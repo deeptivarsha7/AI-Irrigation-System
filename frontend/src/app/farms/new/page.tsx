@@ -19,9 +19,21 @@ const SOIL_TYPES = [
   { name: "Chalky", icon: "⛰️", note: "Alkaline, free-draining" },
 ];
 
+const CROP_TYPES = [
+  { name: "Rice", icon: "🌾", note: "High water demand, needs standing water" },
+  { name: "Wheat", icon: "🌿", note: "Moderate water, sensitive at flowering" },
+  { name: "Sugarcane", icon: "🎋", note: "Very high, year-round water need" },
+  { name: "Cotton", icon: "☁️", note: "Moderate, critical during boll formation" },
+  { name: "Maize", icon: "🌽", note: "Moderate, sensitive during tasseling" },
+  { name: "Groundnut", icon: "🥜", note: "Low-moderate, avoid waterlogging" },
+  { name: "Vegetables", icon: "🥬", note: "Frequent, shallow watering" },
+  { name: "Coconut", icon: "🥥", note: "Steady, deep-root irrigation" },
+  { name: "Other", icon: "🌱", note: "Custom crop, general schedule" },
+];
+
 const STEPS_INFO = [
   { icon: "📍", label: "Location", desc: "Pinpoints your field for accurate weather forecasts" },
-  { icon: "🌱", label: "Soil type", desc: "Shapes how we calculate water retention" },
+  { icon: "🌱", label: "Soil & crop", desc: "Shapes water retention and irrigation timing" },
   { icon: "📏", label: "Area", desc: "Scales irrigation volume recommendations" },
 ];
 
@@ -33,11 +45,13 @@ function NewFarmContent() {
   const [longitude, setLongitude] = useState("");
   const [areaHectares, setAreaHectares] = useState("");
   const [soilType, setSoilType] = useState("Loamy");
+  const [cropType, setCropType] = useState("Rice");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
 
   const selectedSoil = SOIL_TYPES.find((s) => s.name === soilType) ?? SOIL_TYPES[0];
+  const selectedCrop = CROP_TYPES.find((c) => c.name === cropType) ?? CROP_TYPES[0];
 
   function useMyLocation() {
     if (!navigator.geolocation) {
@@ -70,6 +84,7 @@ function NewFarmContent() {
         longitude: parseFloat(longitude),
         area_hectares: parseFloat(areaHectares),
         soil_type: soilType,
+        crop_type: cropType,
       });
       router.push(`/farms/${farm.id}`);
     } catch (err) {
@@ -180,7 +195,10 @@ function NewFarmContent() {
                 >
                   {name || "Your field name"}
                 </h3>
-                <span className="text-2xl leading-none">{selectedSoil.icon}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-2xl leading-none">{selectedCrop.icon}</span>
+                  <span className="text-2xl leading-none">{selectedSoil.icon}</span>
+                </div>
               </div>
               <p className="text-sm mt-1" style={{ color: `${COLORS.ink}75`, fontFamily: "var(--font-body)" }}>
                 📍 {location || "Location pending"}
@@ -197,6 +215,12 @@ function NewFarmContent() {
                   style={{ backgroundColor: `${COLORS.forest}12`, color: COLORS.forest }}
                 >
                   {soilType} soil
+                </span>
+                <span
+                  className="px-2.5 py-1 rounded-full font-semibold"
+                  style={{ backgroundColor: `${COLORS.sunDeep}15`, color: COLORS.sunDeep }}
+                >
+                  {cropType}
                 </span>
               </div>
             </div>
@@ -345,6 +369,40 @@ function NewFarmContent() {
                 </div>
                 <p className="text-xs mt-2" style={{ color: `${COLORS.ink}70`, fontFamily: "var(--font-body)" }}>
                   {selectedSoil.icon} {selectedSoil.note}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                  Crop type
+                </label>
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  {CROP_TYPES.map((c) => {
+                    const active = cropType === c.name;
+                    return (
+                      <button
+                        key={c.name}
+                        type="button"
+                        onClick={() => setCropType(c.name)}
+                        className="soil-chip flex flex-col items-center gap-1 rounded-xl px-2 py-3 text-center transition"
+                        style={{
+                          backgroundColor: active ? `${COLORS.sunDeep}20` : "white",
+                          border: active ? `2px solid ${COLORS.sunDeep}` : "2px solid rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        <span className="text-xl">{c.icon}</span>
+                        <span
+                          className="text-[11px] font-bold"
+                          style={{ color: active ? COLORS.sunDeep : COLORS.ink, fontFamily: "var(--font-body)" }}
+                        >
+                          {c.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs mt-2" style={{ color: `${COLORS.ink}70`, fontFamily: "var(--font-body)" }}>
+                  {selectedCrop.icon} {selectedCrop.note}
                 </p>
               </div>
 

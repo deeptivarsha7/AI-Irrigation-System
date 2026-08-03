@@ -21,6 +21,7 @@ export interface Farm {
   longitude: number;
   area_hectares: number;
   soil_type: string;
+  crop_type: string;
   created_at: string;
 }
 
@@ -31,6 +32,7 @@ export interface FarmCreatePayload {
   longitude: number;
   area_hectares: number;
   soil_type: string;
+  crop_type: string;
 }
 
 export type FarmUpdatePayload = Partial<FarmCreatePayload>;

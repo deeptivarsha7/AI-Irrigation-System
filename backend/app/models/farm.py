@@ -17,6 +17,7 @@ class Farm(Base):
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     area_hectares: Mapped[float] = mapped_column(Float, nullable=False)
     soil_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    crop_type: Mapped[str] = mapped_column(String(100), nullable=False, server_default="unspecified")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     owner = relationship("User", back_populates="farms")
