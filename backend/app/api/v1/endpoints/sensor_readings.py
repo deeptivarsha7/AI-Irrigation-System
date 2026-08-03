@@ -11,6 +11,14 @@ from app.schemas.sensor_reading import SensorReadingCreate, SensorReadingRespons
 
 router = APIRouter()
 
+# Sane upper bounds per sensor type. A reading outside this range is almost
+# certainly a faulty sensor or bad data, not a real measurement.
+SENSOR_VALUE_BOUNDS = {
+    "soil_moisture": (0, 100),   # percentage
+    "humidity": (0, 100),        # percentage
+    "temperature": (-10, 60),    # Celsius, realistic field range
+}
+
 
 @router.post("/", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
 def create_reading(reading_in: SensorReadingCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -22,6 +30,15 @@ def create_reading(reading_in: SensorReadingCreate, db: Session = Depends(get_db
     )
     if not sensor:
         raise HTTPException(status_code=404, detail="Sensor not found")
+
+    bounds = SENSOR_VALUE_BOUNDS.get(sensor.sensor_type)
+    if bounds:
+        low, high = bounds
+        if not (low <= reading_in.value <= high):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Value {reading_in.value} is outside the valid range for {sensor.sensor_type} ({low}–{high}).",
+            )
 
     new_reading = SensorReading(**reading_in.model_dump())
     db.add(new_reading)
