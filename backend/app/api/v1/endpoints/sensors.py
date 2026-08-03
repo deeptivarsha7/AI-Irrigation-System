@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import get_db, get_current_user
 from app.models.sensor import Sensor
@@ -24,7 +25,14 @@ def create_sensor(sensor_in: SensorCreate, db: Session = Depends(get_db), curren
 
     new_sensor = Sensor(**sensor_in.model_dump())
     db.add(new_sensor)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A sensor with this ID already exists. Please use a unique sensor ID.",
+        )
     db.refresh(new_sensor)
     return new_sensor
 
@@ -66,7 +74,14 @@ def update_sensor(sensor_id: int, sensor_in: SensorUpdate, db: Session = Depends
     for key, value in sensor_in.model_dump(exclude_unset=True).items():
         setattr(sensor, key, value)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A sensor with this ID already exists. Please use a unique sensor ID.",
+        )
     db.refresh(sensor)
     return sensor
 

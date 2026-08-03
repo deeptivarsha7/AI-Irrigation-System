@@ -118,3 +118,40 @@ export async function updateFarm(farmId: number, payload: FarmUpdatePayload): Pr
 export async function deleteFarm(farmId: number): Promise<null> {
   return apiFetch(`/farms/${farmId}`, { method: "DELETE" });
 }
+
+export interface Sensor {
+  id: number;
+  farm_id: number;
+  sensor_type: string;
+  sensor_identifier: string;
+  status: string;
+  installed_at: string;
+}
+
+export interface SensorCreatePayload {
+  farm_id: number;
+  sensor_type: string;
+  sensor_identifier: string;
+}
+
+export interface SensorReading {
+  id: number;
+  sensor_id: number;
+  value: number;
+  recorded_at: string;
+}
+
+export async function getSensors(): Promise<Sensor[]> {
+  return apiFetch("/sensors/");
+}
+
+export async function createSensor(payload: SensorCreatePayload): Promise<Sensor> {
+  return apiFetch("/sensors/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSensorReadings(sensorId: number): Promise<SensorReading[]> {
+  return apiFetch(`/sensor-readings/sensor/${sensorId}`);
+}
