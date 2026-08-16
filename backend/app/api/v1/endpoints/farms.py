@@ -8,6 +8,7 @@ from app.models.farm import Farm
 from app.models.user import User
 from app.models.sensor import Sensor
 from app.models.sensor_reading import SensorReading
+from app.models.irrigation_event import IrrigationEvent
 from app.schemas.farm import FarmCreate, FarmUpdate, FarmResponse
 from app.schemas.weather import WeatherResponse
 from app.schemas.prediction import PredictionResponse
@@ -78,6 +79,50 @@ def get_farm_weather_route(farm_id: int, db: Session = Depends(get_db), current_
         raise HTTPException(status_code=502, detail="Weather service unavailable and no cached data exists")
 
 
+def _get_latest_moisture_with_timestamp(db: Session, farm_id: int):
+    """
+    Shared helper: finds the farm's soil-moisture sensor (if any) and its
+    most recent reading + timestamp. Used by both the prediction and
+    schedule routes so staleness handling stays consistent between them.
+    """
+    latest_moisture = None
+    reading_recorded_at = None
+
+    moisture_sensor = (
+        db.query(Sensor)
+        .filter(Sensor.farm_id == farm_id, Sensor.sensor_type == "soil_moisture")
+        .order_by(Sensor.installed_at.desc())
+        .first()
+    )
+    if moisture_sensor:
+        latest_reading = (
+            db.query(SensorReading)
+            .filter(SensorReading.sensor_id == moisture_sensor.id)
+            .order_by(SensorReading.recorded_at.desc())
+            .first()
+        )
+        if latest_reading:
+            latest_moisture = latest_reading.value
+            reading_recorded_at = latest_reading.recorded_at
+
+    return latest_moisture, reading_recorded_at
+
+
+def _get_previous_irrigation_mm(db: Session, farm_id: int) -> float:
+    """
+    Most recent logged irrigation amount for this farm, or 0.0 if none has
+    ever been recorded — 0.0 here is an honest 'no history yet', not a
+    silent placeholder, since it only applies before any event exists.
+    """
+    last_event = (
+        db.query(IrrigationEvent)
+        .filter(IrrigationEvent.farm_id == farm_id)
+        .order_by(IrrigationEvent.irrigated_at.desc())
+        .first()
+    )
+    return last_event.water_amount_mm if last_event else 0.0
+
+
 @router.get("/{farm_id}/predict-irrigation", response_model=PredictionResponse)
 def predict_irrigation_route(
     farm_id: int,
@@ -96,29 +141,18 @@ def predict_irrigation_route(
             detail="Weather data is required to generate a prediction, and is currently unavailable.",
         )
 
-    latest_moisture = None
-    moisture_sensor = (
-        db.query(Sensor)
-        .filter(Sensor.farm_id == farm.id, Sensor.sensor_type == "soil_moisture")
-        .order_by(Sensor.installed_at.desc())
-        .first()
-    )
-    if moisture_sensor:
-        latest_reading = (
-            db.query(SensorReading)
-            .filter(SensorReading.sensor_id == moisture_sensor.id)
-            .order_by(SensorReading.recorded_at.desc())
-            .first()
-        )
-        if latest_reading:
-            latest_moisture = latest_reading.value
+    latest_moisture, reading_recorded_at = _get_latest_moisture_with_timestamp(db, farm.id)
+    previous_irrigation_mm = _get_previous_irrigation_mm(db, farm.id)
 
     try:
-        result = predict_irrigation(farm, weather, latest_moisture)
+        result = predict_irrigation(
+            farm, weather, latest_moisture, reading_recorded_at, previous_irrigation_mm
+        )
     except ModelNotAvailableError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
     return result
+
 
 @router.get("/{farm_id}/schedule", response_model=ScheduleResponse)
 def get_farm_schedule_route(
@@ -138,25 +172,13 @@ def get_farm_schedule_route(
             detail="Weather data is required to build a schedule, and is currently unavailable.",
         )
 
-    latest_moisture = None
-    moisture_sensor = (
-        db.query(Sensor)
-        .filter(Sensor.farm_id == farm.id, Sensor.sensor_type == "soil_moisture")
-        .order_by(Sensor.installed_at.desc())
-        .first()
-    )
-    if moisture_sensor:
-        latest_reading = (
-            db.query(SensorReading)
-            .filter(SensorReading.sensor_id == moisture_sensor.id)
-            .order_by(SensorReading.recorded_at.desc())
-            .first()
-        )
-        if latest_reading:
-            latest_moisture = latest_reading.value
+    latest_moisture, reading_recorded_at = _get_latest_moisture_with_timestamp(db, farm.id)
+    previous_irrigation_mm = _get_previous_irrigation_mm(db, farm.id)
 
     try:
-        prediction_dict = predict_irrigation(farm, weather_dict, latest_moisture)
+        prediction_dict = predict_irrigation(
+            farm, weather_dict, latest_moisture, reading_recorded_at, previous_irrigation_mm
+        )
     except ModelNotAvailableError as e:
         raise HTTPException(status_code=503, detail=str(e))
 

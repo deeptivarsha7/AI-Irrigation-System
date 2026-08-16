@@ -6,20 +6,30 @@ classification: irrigation_need) and assembles a live feature row from:
   - the farm's stored profile (soil, crop, growth stage, irrigation
     infrastructure, region)
   - live weather (temperature, humidity, rainfall) from the weather service
-  - the farm's latest soil-moisture sensor reading, if one exists
+  - the farm's latest soil-moisture sensor reading, if one exists and is
+    recent enough to be trusted (see STALE_READING_THRESHOLD_HOURS below)
+  - the farm's most recently logged irrigation event, if any (see
+    previous_irrigation_mm below)
 
 Models are loaded once and cached in memory (module-level singletons) since
 loading a joblib pipeline from disk on every request would be wasteful.
 
-If no soil-moisture sensor reading exists yet, a soil-type-based estimate is
-used instead of a raw sensor value, and the response is explicitly marked
-with confidence="estimated" so the frontend (and the farmer) knows this
+If no soil-moisture sensor reading exists yet, OR the most recent one is
+too old to trust, a soil-type-based estimate is used instead of the raw
+sensor value, and the response is explicitly marked with
+confidence="estimated" so the frontend (and the farmer) knows this
 prediction is a best-effort guess, not a live reading — this is deliberate,
-not an oversight: silently treating an estimate as equivalent to a real
-sensor reading would be misleading.
+not an oversight: silently treating a stale or missing reading as
+equivalent to a real, current one would be misleading.
+
+previous_irrigation_mm is sourced from the farm's logged irrigation_events
+history (see app/models/irrigation_event.py), not hardcoded — this was a
+real gap fixed after initial serving went live: earlier the model always
+received 0.0 here regardless of a farm's actual watering history, silently
+discarding a feature it was trained on as meaningful signal.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -32,6 +42,8 @@ CLASSIFIER_PATH = MODELS_DIR / "irrigation_need_classifier.joblib"
 
 _regressor = None
 _classifier = None
+
+STALE_READING_THRESHOLD_HOURS = 6
 
 
 class ModelNotAvailableError(Exception):
@@ -61,7 +73,8 @@ def _load_models():
 
 # Typical volumetric soil moisture (%) by soil type at a "normal" field
 # state — these are reasonable literature-based midpoints used ONLY as a
-# fallback when no sensor reading exists yet. Not measured data.
+# fallback when no sensor reading exists yet, or the latest one is stale.
+# Not measured data.
 SOIL_MOISTURE_DEFAULTS = {
     "sandy": 15.0,
     "loamy": 30.0,
@@ -115,10 +128,25 @@ def predict_irrigation(
     farm,
     weather: dict,
     latest_soil_moisture: Optional[float],
+    reading_recorded_at: Optional[datetime] = None,
+    previous_irrigation_mm: float = 0.0,
 ) -> dict:
     """
     Run both trained models against a farm's current profile + live
     conditions, and return a structured prediction result.
+
+    A soil-moisture reading is only trusted as "live" if it was recorded
+    within STALE_READING_THRESHOLD_HOURS. A sensor that stopped reporting
+    (e.g. dead battery, disconnected) still has a "latest reading" in the
+    database — using that old value as if it were current would silently
+    feed the model stale input. Anything older falls back to the same
+    soil-type estimate used when there's no sensor at all, with
+    confidence="estimated" either way, so the frontend treats both cases
+    identically and honestly.
+
+    previous_irrigation_mm should come from the farm's actual logged
+    irrigation history (0.0 is only correct when no event has ever been
+    recorded — see _get_previous_irrigation_mm in the farms endpoint).
 
     Raises ModelNotAvailableError if the .joblib files aren't present.
     """
@@ -126,7 +154,13 @@ def predict_irrigation(
 
     confidence = "high"
     soil_moisture = latest_soil_moisture
-    if soil_moisture is None:
+
+    is_stale = (
+        reading_recorded_at is not None
+        and datetime.utcnow() - reading_recorded_at > timedelta(hours=STALE_READING_THRESHOLD_HOURS)
+    )
+
+    if soil_moisture is None or is_stale:
         soil_moisture = SOIL_MOISTURE_DEFAULTS.get(farm.soil_type.lower().strip(), 25.0)
         confidence = "estimated"
 
@@ -138,7 +172,7 @@ def predict_irrigation(
         "humidity": float(weather["humidity"]),
         "rainfall_mm": float(weather.get("rainfall_mm", 0.0) or 0.0),
         "area_hectares": float(farm.area_hectares),
-        "previous_irrigation_mm": 0.0,
+        "previous_irrigation_mm": float(previous_irrigation_mm),
         "crop_type": farm.crop_type,
         "soil_type": farm.soil_type,
         "crop_growth_stage": farm.crop_growth_stage,

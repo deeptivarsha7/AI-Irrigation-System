@@ -27,3 +27,4 @@ class Farm(Base):
 
     owner = relationship("User", back_populates="farms")
     sensors = relationship("Sensor", back_populates="farm", cascade="all, delete")
+    irrigation_events = relationship("IrrigationEvent", cascade="all, delete")

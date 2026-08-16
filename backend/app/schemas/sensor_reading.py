@@ -8,9 +8,14 @@ class SensorReadingCreate(BaseModel):
 
     @field_validator("value")
     @classmethod
-    def value_must_be_non_negative(cls, v: float) -> float:
+    def value_must_be_plausible(cls, v: float) -> float:
         if v < 0:
             raise ValueError("Reading value cannot be negative")
+        if v > 200:
+            raise ValueError(
+                "Reading value is outside any physically plausible range for a "
+                "sensor (max 200). Check the sensor for malfunction."
+            )
         return v
 
 
