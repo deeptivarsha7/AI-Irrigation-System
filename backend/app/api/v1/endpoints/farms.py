@@ -13,7 +13,8 @@ from app.schemas.weather import WeatherResponse
 from app.schemas.prediction import PredictionResponse
 from app.services.weather_service import get_farm_weather
 from app.services.prediction_service import predict_irrigation, ModelNotAvailableError
-
+from app.schemas.schedule import ScheduleResponse
+from app.services.schedule_service import generate_irrigation_schedule
 
 router = APIRouter()
 
@@ -118,3 +119,48 @@ def predict_irrigation_route(
         raise HTTPException(status_code=503, detail=str(e))
 
     return result
+
+@router.get("/{farm_id}/schedule", response_model=ScheduleResponse)
+def get_farm_schedule_route(
+    farm_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == current_user.id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+
+    try:
+        weather_dict = get_farm_weather(farm.id, farm.latitude, farm.longitude)
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Weather data is required to build a schedule, and is currently unavailable.",
+        )
+
+    latest_moisture = None
+    moisture_sensor = (
+        db.query(Sensor)
+        .filter(Sensor.farm_id == farm.id, Sensor.sensor_type == "soil_moisture")
+        .order_by(Sensor.installed_at.desc())
+        .first()
+    )
+    if moisture_sensor:
+        latest_reading = (
+            db.query(SensorReading)
+            .filter(SensorReading.sensor_id == moisture_sensor.id)
+            .order_by(SensorReading.recorded_at.desc())
+            .first()
+        )
+        if latest_reading:
+            latest_moisture = latest_reading.value
+
+    try:
+        prediction_dict = predict_irrigation(farm, weather_dict, latest_moisture)
+    except ModelNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    prediction = PredictionResponse(**prediction_dict)
+    weather = WeatherResponse(**weather_dict)
+
+    return generate_irrigation_schedule(prediction, weather)
