@@ -22,6 +22,11 @@ export interface Farm {
   area_hectares: number;
   soil_type: string;
   crop_type: string;
+  crop_growth_stage: string;
+  irrigation_type: string;
+  water_source: string;
+  mulching_used: string;
+  region: string;
   created_at: string;
 }
 
@@ -33,6 +38,11 @@ export interface FarmCreatePayload {
   area_hectares: number;
   soil_type: string;
   crop_type: string;
+  crop_growth_stage: string;
+  irrigation_type: string;
+  water_source: string;
+  mulching_used: string;
+  region: string;
 }
 
 export type FarmUpdatePayload = Partial<FarmCreatePayload>;
@@ -92,9 +102,6 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   return handleResponse(response);
 }
 
-// Note the trailing slash — your FastAPI routes are registered as "/" under
-// the farms router, which typically means the full path is "/farms/" not "/farms".
-// If you get a 307 redirect or 404, try dropping/adding the trailing slash to match.
 export async function getFarms(): Promise<Farm[]> {
   return apiFetch("/farms/");
 }
@@ -156,4 +163,18 @@ export async function createSensor(payload: SensorCreatePayload): Promise<Sensor
 
 export async function getSensorReadings(sensorId: number): Promise<SensorReading[]> {
   return apiFetch(`/sensor-readings/sensor/${sensorId}`);
+}
+
+export interface Prediction {
+  water_required_mm: number;
+  irrigation_need: string;
+  confidence: string;
+  soil_moisture_used: number;
+  season: string;
+  recommendation: string;
+  generated_at: string;
+}
+
+export async function getPrediction(farmId: number): Promise<Prediction> {
+  return apiFetch(`/farms/${farmId}/predict-irrigation`);
 }

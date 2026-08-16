@@ -31,6 +31,29 @@ const CROP_TYPES = [
   { name: "Other", icon: "🌱", note: "Custom crop, general schedule" },
 ];
 
+const GROWTH_STAGES = [
+  { name: "Sowing", icon: "🌱" },
+  { name: "Vegetative", icon: "🌿" },
+  { name: "Flowering", icon: "🌸" },
+  { name: "Harvest", icon: "🌾" },
+];
+
+const IRRIGATION_TYPES = [
+  { name: "Drip", icon: "💧" },
+  { name: "Sprinkler", icon: "🌧️" },
+  { name: "Canal", icon: "🚿" },
+  { name: "Rainfed", icon: "☔" },
+];
+
+const WATER_SOURCES = [
+  { name: "Groundwater", icon: "🕳️" },
+  { name: "River", icon: "🏞️" },
+  { name: "Reservoir", icon: "🌊" },
+  { name: "Rainwater", icon: "🌧️" },
+];
+
+const REGIONS = ["North", "South", "East", "West", "Central"];
+
 const STEPS_INFO = [
   { icon: "📍", label: "Location", desc: "Pinpoints your field for accurate weather forecasts" },
   { icon: "🌱", label: "Soil & crop", desc: "Shapes water retention and irrigation timing" },
@@ -46,6 +69,11 @@ function NewFarmContent() {
   const [areaHectares, setAreaHectares] = useState("");
   const [soilType, setSoilType] = useState("Loamy");
   const [cropType, setCropType] = useState("Rice");
+  const [growthStage, setGrowthStage] = useState("Sowing");
+  const [irrigationType, setIrrigationType] = useState("Drip");
+  const [waterSource, setWaterSource] = useState("Groundwater");
+  const [mulchingUsed, setMulchingUsed] = useState("No");
+  const [region, setRegion] = useState("South");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -85,6 +113,11 @@ function NewFarmContent() {
         area_hectares: parseFloat(areaHectares),
         soil_type: soilType,
         crop_type: cropType,
+        crop_growth_stage: growthStage,
+        irrigation_type: irrigationType,
+        water_source: waterSource,
+        mulching_used: mulchingUsed,
+        region: region,
       });
       router.push(`/farms/${farm.id}`);
     } catch (err) {
@@ -220,7 +253,13 @@ function NewFarmContent() {
                   className="px-2.5 py-1 rounded-full font-semibold"
                   style={{ backgroundColor: `${COLORS.sunDeep}15`, color: COLORS.sunDeep }}
                 >
-                  {cropType}
+                  {cropType} · {growthStage}
+                </span>
+                <span
+                  className="px-2.5 py-1 rounded-full font-semibold"
+                  style={{ backgroundColor: `${COLORS.water}15`, color: COLORS.water }}
+                >
+                  {irrigationType}
                 </span>
               </div>
             </div>
@@ -284,20 +323,9 @@ function NewFarmContent() {
               </div>
 
               <div>
-                <div className="flex items-center justify-between">
-                  <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
-                    Coordinates
-                  </label>
-                  <button
-                    type="button"
-                    onClick={useMyLocation}
-                    disabled={locating}
-                    className="text-xs font-semibold hover:underline disabled:opacity-50"
-                    style={{ color: COLORS.clay, fontFamily: "var(--font-body)" }}
-                  >
-                    {locating ? "Locating…" : "📍 Use my location"}
-                  </button>
-                </div>
+                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                  Coordinates
+                </label>
                 <div className="flex gap-3 mt-1.5">
                   <input
                     type="number"
@@ -307,7 +335,7 @@ function NewFarmContent() {
                     onChange={(e) => setLatitude(e.target.value)}
                     style={inputStyle}
                     className={`w-1/2 ${inputClass}`}
-                    placeholder="Latitude"
+                    placeholder="Latitude, e.g. 13.0827"
                   />
                   <input
                     type="number"
@@ -317,25 +345,51 @@ function NewFarmContent() {
                     onChange={(e) => setLongitude(e.target.value)}
                     style={inputStyle}
                     className={`w-1/2 ${inputClass}`}
-                    placeholder="Longitude"
+                    placeholder="Longitude, e.g. 80.2707"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={useMyLocation}
+                  disabled={locating}
+                  className="text-xs font-medium mt-2 hover:underline disabled:opacity-50"
+                  style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-body)" }}
+                >
+                  {locating ? "Locating…" : "📍 Or auto-fill from my current location"}
+                </button>
               </div>
 
-              <div>
-                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
-                  Area (hectares)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  required
-                  value={areaHectares}
-                  onChange={(e) => setAreaHectares(e.target.value)}
-                  style={inputStyle}
-                  className={inputClass}
-                  placeholder="18.5"
-                />
+              <div className="flex gap-3">
+                <div className="w-1/2">
+                  <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                    Area (hectares)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={areaHectares}
+                    onChange={(e) => setAreaHectares(e.target.value)}
+                    style={inputStyle}
+                    className={inputClass}
+                    placeholder="18.5"
+                  />
+                </div>
+                <div className="w-1/2">
+                  <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                    Region
+                  </label>
+                  <select
+                    value={region}
+                    onChange={(e) => setRegion(e.target.value)}
+                    style={inputStyle}
+                    className={inputClass}
+                  >
+                    {REGIONS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -404,6 +458,126 @@ function NewFarmContent() {
                 <p className="text-xs mt-2" style={{ color: `${COLORS.ink}70`, fontFamily: "var(--font-body)" }}>
                   {selectedCrop.icon} {selectedCrop.note}
                 </p>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                  Growth stage
+                </label>
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {GROWTH_STAGES.map((g) => {
+                    const active = growthStage === g.name;
+                    return (
+                      <button
+                        key={g.name}
+                        type="button"
+                        onClick={() => setGrowthStage(g.name)}
+                        className="soil-chip flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-center transition"
+                        style={{
+                          backgroundColor: active ? `${COLORS.leaf}20` : "white",
+                          border: active ? `2px solid ${COLORS.leafDeep}` : "2px solid rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        <span className="text-lg">{g.icon}</span>
+                        <span
+                          className="text-[10px] font-bold"
+                          style={{ color: active ? COLORS.leafDeep : COLORS.ink, fontFamily: "var(--font-body)" }}
+                        >
+                          {g.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                  Irrigation type
+                </label>
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {IRRIGATION_TYPES.map((it) => {
+                    const active = irrigationType === it.name;
+                    return (
+                      <button
+                        key={it.name}
+                        type="button"
+                        onClick={() => setIrrigationType(it.name)}
+                        className="soil-chip flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-center transition"
+                        style={{
+                          backgroundColor: active ? `${COLORS.water}20` : "white",
+                          border: active ? `2px solid ${COLORS.water}` : "2px solid rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        <span className="text-lg">{it.icon}</span>
+                        <span
+                          className="text-[10px] font-bold"
+                          style={{ color: active ? COLORS.water : COLORS.ink, fontFamily: "var(--font-body)" }}
+                        >
+                          {it.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                  Water source
+                </label>
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {WATER_SOURCES.map((ws) => {
+                    const active = waterSource === ws.name;
+                    return (
+                      <button
+                        key={ws.name}
+                        type="button"
+                        onClick={() => setWaterSource(ws.name)}
+                        className="soil-chip flex flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-center transition"
+                        style={{
+                          backgroundColor: active ? `${COLORS.water}20` : "white",
+                          border: active ? `2px solid ${COLORS.water}` : "2px solid rgba(0,0,0,0.08)",
+                        }}
+                      >
+                        <span className="text-lg">{ws.icon}</span>
+                        <span
+                          className="text-[10px] font-bold"
+                          style={{ color: active ? COLORS.water : COLORS.ink, fontFamily: "var(--font-body)" }}
+                        >
+                          {ws.name}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wide font-semibold" style={labelStyle}>
+                  Mulching used?
+                </label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  {["Yes", "No"].map((opt) => {
+                    const active = mulchingUsed === opt;
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setMulchingUsed(opt)}
+                        className="soil-chip rounded-xl px-3 py-2.5 text-sm font-bold transition"
+                        style={{
+                          backgroundColor: active ? `${COLORS.leaf}20` : "white",
+                          border: active ? `2px solid ${COLORS.leafDeep}` : "2px solid rgba(0,0,0,0.08)",
+                          color: active ? COLORS.leafDeep : COLORS.ink,
+                          fontFamily: "var(--font-body)",
+                        }}
+                      >
+                        {opt === "Yes" ? "🍂 Yes" : "🚫 No"}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {error && (

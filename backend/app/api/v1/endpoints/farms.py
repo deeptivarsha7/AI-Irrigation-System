@@ -6,9 +6,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_current_user
 from app.models.farm import Farm
 from app.models.user import User
+from app.models.sensor import Sensor
+from app.models.sensor_reading import SensorReading
 from app.schemas.farm import FarmCreate, FarmUpdate, FarmResponse
 from app.schemas.weather import WeatherResponse
+from app.schemas.prediction import PredictionResponse
 from app.services.weather_service import get_farm_weather
+from app.services.prediction_service import predict_irrigation, ModelNotAvailableError
+
 
 router = APIRouter()
 
@@ -70,3 +75,46 @@ def get_farm_weather_route(farm_id: int, db: Session = Depends(get_db), current_
         return get_farm_weather(farm.id, farm.latitude, farm.longitude)
     except (httpx.HTTPStatusError, httpx.RequestError):
         raise HTTPException(status_code=502, detail="Weather service unavailable and no cached data exists")
+
+
+@router.get("/{farm_id}/predict-irrigation", response_model=PredictionResponse)
+def predict_irrigation_route(
+    farm_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == current_user.id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+
+    try:
+        weather = get_farm_weather(farm.id, farm.latitude, farm.longitude)
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Weather data is required to generate a prediction, and is currently unavailable.",
+        )
+
+    latest_moisture = None
+    moisture_sensor = (
+        db.query(Sensor)
+        .filter(Sensor.farm_id == farm.id, Sensor.sensor_type == "soil_moisture")
+        .order_by(Sensor.installed_at.desc())
+        .first()
+    )
+    if moisture_sensor:
+        latest_reading = (
+            db.query(SensorReading)
+            .filter(SensorReading.sensor_id == moisture_sensor.id)
+            .order_by(SensorReading.recorded_at.desc())
+            .first()
+        )
+        if latest_reading:
+            latest_moisture = latest_reading.value
+
+    try:
+        result = predict_irrigation(farm, weather, latest_moisture)
+    except ModelNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return result

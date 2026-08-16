@@ -17,7 +17,12 @@ class Farm(Base):
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     area_hectares: Mapped[float] = mapped_column(Float, nullable=False)
     soil_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    crop_type: Mapped[str] = mapped_column(String(100), nullable=False, server_default="unspecified")
+    crop_type: Mapped[str] = mapped_column(String(100), nullable=False, server_default="Other")
+    crop_growth_stage: Mapped[str] = mapped_column(String(50), nullable=False, server_default="Sowing")
+    irrigation_type: Mapped[str] = mapped_column(String(50), nullable=False, server_default="Rainfed")
+    water_source: Mapped[str] = mapped_column(String(50), nullable=False, server_default="Rainwater")
+    mulching_used: Mapped[str] = mapped_column(String(5), nullable=False, server_default="No")
+    region: Mapped[str] = mapped_column(String(50), nullable=False, server_default="South")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     owner = relationship("User", back_populates="farms")

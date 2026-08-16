@@ -11,6 +11,11 @@ class FarmCreate(BaseModel):
     area_hectares: float
     soil_type: str
     crop_type: str
+    crop_growth_stage: str
+    irrigation_type: str
+    water_source: str
+    mulching_used: str
+    region: str
 
 
 class FarmUpdate(BaseModel):
@@ -21,6 +26,11 @@ class FarmUpdate(BaseModel):
     area_hectares: Optional[float] = None
     soil_type: Optional[str] = None
     crop_type: Optional[str] = None
+    crop_growth_stage: Optional[str] = None
+    irrigation_type: Optional[str] = None
+    water_source: Optional[str] = None
+    mulching_used: Optional[str] = None
+    region: Optional[str] = None
 
 
 class FarmResponse(BaseModel):
@@ -33,6 +43,11 @@ class FarmResponse(BaseModel):
     area_hectares: float
     soil_type: str
     crop_type: str
+    crop_growth_stage: str
+    irrigation_type: str
+    water_source: str
+    mulching_used: str
+    region: str
     created_at: datetime
 
     class Config:

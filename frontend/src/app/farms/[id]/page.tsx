@@ -3,7 +3,17 @@
 import { useEffect, useState, use } from "react";
 import Link from "next/link";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { getFarm, Farm, apiFetch, getSensors, getSensorReadings, createSensor, Sensor } from "@/lib/api";
+import {
+  getFarm,
+  Farm,
+  apiFetch,
+  getSensors,
+  getSensorReadings,
+  createSensor,
+  Sensor,
+  getPrediction,
+  Prediction,
+} from "@/lib/api";
 import { COLORS } from "@/lib/theme";
 
 interface WeatherData {
@@ -32,6 +42,18 @@ const SENSOR_TYPE_ICONS: Record<string, string> = {
   humidity: "💨",
 };
 
+const NEED_COLORS: Record<string, string> = {
+  Low: COLORS.leafDeep,
+  Medium: COLORS.sunDeep,
+  High: COLORS.clay,
+};
+
+const NEED_ICONS: Record<string, string> = {
+  Low: "🟢",
+  Medium: "🟡",
+  High: "🔴",
+};
+
 function soilIcon(soilType: string) {
   return SOIL_ICONS[soilType.toLowerCase().trim()] ?? "🌱";
 }
@@ -47,6 +69,119 @@ function formatDay(dateStr: string) {
 
 function sensorTypeLabel(type: string) {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function PredictionSection({ farmId }: { farmId: number }) {
+  const [prediction, setPrediction] = useState<Prediction | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await getPrediction(farmId);
+        setPrediction(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't generate a prediction right now.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [farmId]);
+
+  const needColor = prediction ? NEED_COLORS[prediction.irrigation_need] ?? COLORS.forest : COLORS.forest;
+  const needIcon = prediction ? NEED_ICONS[prediction.irrigation_need] ?? "💧" : "💧";
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}>
+          Irrigation prediction
+        </h2>
+        <span
+          className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-full"
+          style={{ backgroundColor: `${COLORS.terracotta}18`, color: COLORS.terracotta, fontFamily: "var(--font-mono)" }}
+        >
+          ML-powered
+        </span>
+      </div>
+
+      {loading && (
+        <p className="text-sm" style={{ color: COLORS.ink, fontFamily: "var(--font-body)" }}>
+          Running prediction model…
+        </p>
+      )}
+
+      {error && !loading && (
+        <p
+          className="text-sm rounded-xl px-4 py-3 font-medium"
+          style={{ color: COLORS.clay, backgroundColor: `${COLORS.clay}15`, fontFamily: "var(--font-body)" }}
+        >
+          {error}
+        </p>
+      )}
+
+      {!loading && prediction && (
+        <div
+          className="rounded-2xl p-6 relative overflow-hidden"
+          style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}14`, boxShadow: `0 20px 44px -20px ${COLORS.forest}35` }}
+        >
+          <div
+            className="absolute top-0 left-0 right-0 h-[4px]"
+            style={{ background: `linear-gradient(90deg, ${needColor}, ${COLORS.sun})` }}
+          />
+
+          {prediction.confidence === "estimated" && (
+            <div className="flex items-center gap-2 mb-4 px-3 py-1.5 rounded-full w-fit" style={{ backgroundColor: `${COLORS.sunDeep}15`, border: `1px solid ${COLORS.sunDeep}40` }}>
+              <span className="text-xs">⚠️</span>
+              <span className="text-[11px] font-semibold" style={{ color: COLORS.sunDeep, fontFamily: "var(--font-mono)" }}>
+                No soil sensor yet — estimated using typical {prediction.soil_moisture_used}% moisture for this soil type
+              </span>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+            <div className="flex items-center gap-4">
+              <span className="text-4xl">{needIcon}</span>
+              <div>
+                <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                  Irrigation need
+                </p>
+                <p className="text-2xl font-bold" style={{ color: needColor, fontFamily: "var(--font-display)" }}>
+                  {prediction.irrigation_need}
+                </p>
+              </div>
+            </div>
+
+            <div className="sm:ml-auto sm:text-right">
+              <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                Recommended water
+              </p>
+              <p className="text-2xl font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}>
+                {prediction.water_required_mm} mm
+              </p>
+            </div>
+          </div>
+
+          <p className="text-sm mt-4 pt-4 leading-relaxed" style={{ color: COLORS.ink, borderTop: `1px solid ${COLORS.forest}12`, fontFamily: "var(--font-body)" }}>
+            {prediction.recommendation}
+          </p>
+
+          <div className="flex flex-wrap gap-2 mt-4 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
+            <span className="px-2.5 py-1 rounded-full font-semibold" style={{ backgroundColor: `${COLORS.forest}10`, color: COLORS.forest }}>
+              Season: {prediction.season}
+            </span>
+            <span className="px-2.5 py-1 rounded-full font-semibold" style={{ backgroundColor: `${COLORS.forest}10`, color: COLORS.forest }}>
+              Confidence: {prediction.confidence}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SensorsSection({ farmId }: { farmId: number }) {
@@ -413,6 +548,7 @@ function FarmDetailContent({ farmId }: { farmId: number }) {
               )}
             </div>
 
+            <PredictionSection farmId={farmId} />
             <SensorsSection farmId={farmId} />
           </>
         )}
