@@ -178,3 +178,53 @@ export interface Prediction {
 export async function getPrediction(farmId: number): Promise<Prediction> {
   return apiFetch(`/farms/${farmId}/predict-irrigation`);
 }
+
+export interface IrrigationEvent {
+  id: number;
+  farm_id: number;
+  water_amount_mm: number;
+  source: string;
+  irrigated_at: string;
+  created_at: string;
+}
+
+export interface IrrigationEventCreatePayload {
+  water_amount_mm: number;
+  irrigated_at: string;
+}
+
+export async function getIrrigationEvents(farmId: number): Promise<IrrigationEvent[]> {
+  return apiFetch(`/farms/${farmId}/irrigation-events`);
+}
+
+export async function logIrrigationEvent(
+  farmId: number,
+  payload: IrrigationEventCreatePayload
+): Promise<IrrigationEvent> {
+  return apiFetch(`/farms/${farmId}/irrigation-events`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface ScheduleEvent {
+  day_offset: number;
+  date: string;
+  time_slot: string;
+  water_amount_mm: number;
+  reason: string;
+}
+
+export interface Schedule {
+  need_level: string;
+  confidence: string;
+  total_water_required_mm: number;
+  scheduled_mm: number;
+  unscheduled_mm: number;
+  events: ScheduleEvent[];
+  summary: string;
+}
+
+export async function getSchedule(farmId: number): Promise<Schedule> {
+  return apiFetch(`/farms/${farmId}/schedule`);
+}

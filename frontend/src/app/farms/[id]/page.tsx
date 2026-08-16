@@ -13,6 +13,12 @@ import {
   Sensor,
   getPrediction,
   Prediction,
+  getIrrigationEvents,
+  logIrrigationEvent,
+  IrrigationEvent,
+  getSchedule,
+  Schedule,
+  ScheduleEvent,
 } from "@/lib/api";
 import { COLORS } from "@/lib/theme";
 
@@ -178,6 +184,317 @@ function PredictionSection({ farmId }: { farmId: number }) {
               Confidence: {prediction.confidence}
             </span>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function dayLabel(dayOffset: number, dateStr: string) {
+  if (dayOffset === 0) return "Today";
+  if (dayOffset === 1) return "Tomorrow";
+  return formatDay(dateStr);
+}
+
+function ScheduleSection({ farmId }: { farmId: number }) {
+  const [schedule, setSchedule] = useState<Schedule | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError("");
+      try {
+        const data = await getSchedule(farmId);
+        setSchedule(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't build a schedule right now.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [farmId]);
+
+  const needColor = schedule ? NEED_COLORS[schedule.need_level] ?? COLORS.forest : COLORS.forest;
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}>
+          Irrigation schedule
+        </h2>
+        <span
+          className="text-[10px] uppercase font-bold px-2.5 py-1 rounded-full"
+          style={{ backgroundColor: `${COLORS.water}18`, color: COLORS.water, fontFamily: "var(--font-mono)" }}
+        >
+          Weather-aware
+        </span>
+      </div>
+
+      {loading && (
+        <p className="text-sm" style={{ color: COLORS.ink, fontFamily: "var(--font-body)" }}>
+          Building schedule…
+        </p>
+      )}
+
+      {error && !loading && (
+        <p
+          className="text-sm rounded-xl px-4 py-3 font-medium"
+          style={{ color: COLORS.clay, backgroundColor: `${COLORS.clay}15`, fontFamily: "var(--font-body)" }}
+        >
+          {error}
+        </p>
+      )}
+
+      {!loading && schedule && (
+        <div
+          className="rounded-2xl p-6 relative overflow-hidden"
+          style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}14`, boxShadow: `0 20px 44px -20px ${COLORS.forest}35` }}
+        >
+          <div
+            className="absolute top-0 left-0 right-0 h-[4px]"
+            style={{ background: `linear-gradient(90deg, ${needColor}, ${COLORS.water})` }}
+          />
+
+          <div className="flex flex-wrap gap-3 mb-5">
+            <div className="flex-1 min-w-[120px]">
+              <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                Total required
+              </p>
+              <p className="text-xl font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}>
+                {schedule.total_water_required_mm} mm
+              </p>
+            </div>
+            <div className="flex-1 min-w-[120px]">
+              <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                Scheduled
+              </p>
+              <p className="text-xl font-bold" style={{ color: COLORS.leafDeep, fontFamily: "var(--font-display)" }}>
+                {schedule.scheduled_mm} mm
+              </p>
+            </div>
+            {schedule.unscheduled_mm > 0 && (
+              <div className="flex-1 min-w-[120px]">
+                <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                  Unscheduled
+                </p>
+                <p className="text-xl font-bold" style={{ color: COLORS.sunDeep, fontFamily: "var(--font-display)" }}>
+                  {schedule.unscheduled_mm} mm
+                </p>
+              </div>
+            )}
+          </div>
+
+          {schedule.events.length === 0 ? (
+            <div
+              className="rounded-xl p-5 text-center"
+              style={{ backgroundColor: `${COLORS.forest}08`, border: `1px dashed ${COLORS.forest}30` }}
+            >
+              <p className="text-sm" style={{ color: `${COLORS.ink}80`, fontFamily: "var(--font-body)" }}>
+                {schedule.summary}
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {schedule.events.map((event: ScheduleEvent, i: number) => (
+                <div
+                  key={`${event.date}-${i}`}
+                  className="flex items-start gap-3 rounded-xl px-4 py-3"
+                  style={{ backgroundColor: `${COLORS.forest}08`, border: `1px solid ${COLORS.forest}12` }}
+                >
+                  <div
+                    className="flex flex-col items-center justify-center rounded-lg px-2.5 py-1.5 shrink-0"
+                    style={{ backgroundColor: `${needColor}15`, minWidth: "64px" }}
+                  >
+                    <span className="text-xs font-bold" style={{ color: needColor, fontFamily: "var(--font-mono)" }}>
+                      {dayLabel(event.day_offset, event.date)}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <p className="text-sm font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-body)" }}>
+                        💧 {event.water_amount_mm} mm — {event.time_slot}
+                      </p>
+                    </div>
+                    <p className="text-xs mt-1 leading-relaxed" style={{ color: `${COLORS.ink}75`, fontFamily: "var(--font-body)" }}>
+                      {event.reason}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-xs mt-4 pt-4 leading-relaxed" style={{ color: `${COLORS.ink}70`, borderTop: `1px solid ${COLORS.forest}12`, fontFamily: "var(--font-body)" }}>
+            {schedule.summary}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IrrigationHistorySection({ farmId }: { farmId: number }) {
+  const [events, setEvents] = useState<IrrigationEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [when, setWhen] = useState(() => new Date().toISOString().slice(0, 16));
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  async function loadEvents() {
+    setLoading(true);
+    try {
+      const data = await getIrrigationEvents(farmId);
+      setEvents(data);
+    } catch {
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farmId]);
+
+  async function handleLog(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError("");
+    setSaving(true);
+    try {
+      await logIrrigationEvent(farmId, {
+        water_amount_mm: parseFloat(amount),
+        irrigated_at: new Date(when).toISOString(),
+      });
+      setAmount("");
+      setShowForm(false);
+      await loadEvents();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Couldn't log this event.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function formatWhen(dateStr: string) {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}>
+          Irrigation history
+        </h2>
+        <button
+          onClick={() => setShowForm((v) => !v)}
+          className="text-sm font-bold px-4 py-2 rounded-full transition hover:brightness-105 active:scale-[0.98]"
+          style={{
+            background: `linear-gradient(135deg, ${COLORS.water}, ${COLORS.leafDeep})`,
+            color: COLORS.cream,
+            fontFamily: "var(--font-body)",
+          }}
+        >
+          {showForm ? "Cancel" : "💧 Log irrigation"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form
+          onSubmit={handleLog}
+          className="rounded-2xl p-5 mb-4 flex flex-col sm:flex-row gap-3 items-end"
+          style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}14` }}
+        >
+          <div className="flex-1 w-full">
+            <label className="text-xs uppercase tracking-wide font-semibold" style={{ color: `${COLORS.ink}80`, fontFamily: "var(--font-mono)" }}>
+              Water applied (mm)
+            </label>
+            <input
+              type="number"
+              step="any"
+              required
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="mt-1.5 w-full rounded-xl border-2 border-black/10 bg-white px-3 py-2.5 outline-none"
+              style={{ color: COLORS.ink, fontFamily: "var(--font-body)" }}
+              placeholder="25"
+            />
+          </div>
+          <div className="flex-1 w-full">
+            <label className="text-xs uppercase tracking-wide font-semibold" style={{ color: `${COLORS.ink}80`, fontFamily: "var(--font-mono)" }}>
+              When
+            </label>
+            <input
+              type="datetime-local"
+              required
+              value={when}
+              onChange={(e) => setWhen(e.target.value)}
+              className="mt-1.5 w-full rounded-xl border-2 border-black/10 bg-white px-3 py-2.5 outline-none"
+              style={{ color: COLORS.ink, fontFamily: "var(--font-body)" }}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full sm:w-auto text-sm font-bold px-5 py-2.5 rounded-xl transition disabled:opacity-60"
+            style={{ backgroundColor: COLORS.leafDeep, color: COLORS.cream, fontFamily: "var(--font-body)" }}
+          >
+            {saving ? "Logging…" : "Log"}
+          </button>
+          {formError && (
+            <p className="text-sm w-full" style={{ color: COLORS.clay, fontFamily: "var(--font-body)" }}>{formError}</p>
+          )}
+        </form>
+      )}
+
+      {loading && (
+        <p className="text-sm" style={{ color: COLORS.ink, fontFamily: "var(--font-body)" }}>Loading history…</p>
+      )}
+
+      {!loading && events.length === 0 && (
+        <div
+          className="rounded-2xl p-6 text-center"
+          style={{ backgroundColor: `${COLORS.cream}90`, border: `1px dashed ${COLORS.forest}30` }}
+        >
+          <p className="text-sm" style={{ color: `${COLORS.ink}70`, fontFamily: "var(--font-body)" }}>
+            No irrigation logged yet. Logging events helps predictions account for your field&apos;s actual watering history.
+          </p>
+        </div>
+      )}
+
+      {!loading && events.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {events.slice(0, 5).map((event) => (
+            <div
+              key={event.id}
+              className="flex items-center justify-between rounded-xl px-4 py-3"
+              style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}12` }}
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-lg">💧</span>
+                <div>
+                  <p className="text-sm font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-body)" }}>
+                    {event.water_amount_mm} mm
+                  </p>
+                  <p className="text-xs" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                    {formatWhen(event.irrigated_at)}
+                  </p>
+                </div>
+              </div>
+              <span
+                className="text-[10px] uppercase font-bold px-2 py-1 rounded-full"
+                style={{ backgroundColor: `${COLORS.forest}10`, color: COLORS.forest, fontFamily: "var(--font-mono)" }}
+              >
+                {event.source}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -549,6 +866,8 @@ function FarmDetailContent({ farmId }: { farmId: number }) {
             </div>
 
             <PredictionSection farmId={farmId} />
+            <ScheduleSection farmId={farmId} />
+            <IrrigationHistorySection farmId={farmId} />
             <SensorsSection farmId={farmId} />
           </>
         )}
