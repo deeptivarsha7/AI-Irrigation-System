@@ -20,6 +20,8 @@ import {
   getSchedule,
   Schedule,
   ScheduleEvent,
+  getAlerts,
+  Alert,
 } from "@/lib/api";
 import { COLORS } from "@/lib/theme";
 import {
@@ -72,6 +74,12 @@ const NEED_ICONS: Record<string, string> = {
   High: "🔴",
 };
 
+const SEVERITY_STYLES: Record<string, { border: string; bg: string; text: string }> = {
+  high: { border: COLORS.clay, bg: `${COLORS.clay}12`, text: COLORS.clay },
+  medium: { border: COLORS.sunDeep, bg: `${COLORS.sunDeep}12`, text: COLORS.sunDeep },
+  low: { border: COLORS.water, bg: `${COLORS.water}12`, text: COLORS.water },
+};
+
 function soilIcon(soilType: string) {
   return SOIL_ICONS[soilType.toLowerCase().trim()] ?? "🌱";
 }
@@ -87,6 +95,52 @@ function formatDay(dateStr: string) {
 
 function sensorTypeLabel(type: string) {
   return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function AlertsSection({ farmId }: { farmId: number }) {
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await getAlerts(farmId);
+        setAlerts(data.alerts);
+      } catch {
+        setAlerts([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [farmId]);
+
+  if (loading || alerts.length === 0) return null;
+
+  return (
+    <div className="mb-6 flex flex-col gap-2">
+      {alerts.map((alert, i) => {
+        const style = SEVERITY_STYLES[alert.severity] ?? SEVERITY_STYLES.low;
+        return (
+          <div
+            key={i}
+            className="rounded-2xl p-4 flex items-start gap-3"
+            style={{ backgroundColor: style.bg, border: `1.5px solid ${style.border}50` }}
+          >
+            <span className="text-2xl shrink-0">{alert.icon}</span>
+            <div>
+              <p className="text-sm font-bold" style={{ color: style.text, fontFamily: "var(--font-display)" }}>
+                {alert.title}
+              </p>
+              <p className="text-sm mt-0.5 leading-relaxed" style={{ color: COLORS.ink, fontFamily: "var(--font-body)" }}>
+                {alert.message}
+              </p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function PredictionSection({ farmId }: { farmId: number }) {
@@ -881,6 +935,8 @@ function FarmDetailContent({ farmId }: { farmId: number }) {
                 )}
               </div>
             </div>
+
+            <AlertsSection farmId={farmId} />
 
             <div className="mb-6">
               <h2 className="text-lg font-bold mb-3" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}>

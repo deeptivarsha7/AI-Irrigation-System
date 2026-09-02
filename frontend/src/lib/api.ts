@@ -228,3 +228,21 @@ export interface Schedule {
 export async function getSchedule(farmId: number): Promise<Schedule> {
   return apiFetch(`/farms/${farmId}/schedule`);
 }
+
+export interface Alert {
+  type: string;
+  severity: string;
+  icon: string;
+  title: string;
+  message: string;
+}
+
+export interface AlertsResponse {
+  farm_id: number;
+  alert_count: number;
+  alerts: Alert[];
+}
+
+export async function getAlerts(farmId: number): Promise<AlertsResponse> {
+  return apiFetch(`/farms/${farmId}/alerts`);
+}

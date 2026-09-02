@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import List
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,6 +17,9 @@ from app.services.weather_service import get_farm_weather
 from app.services.prediction_service import predict_irrigation, ModelNotAvailableError
 from app.schemas.schedule import ScheduleResponse
 from app.services.schedule_service import generate_irrigation_schedule
+from app.schemas.alert import AlertsResponse
+from app.services.alert_service import evaluate_alerts
+
 
 router = APIRouter()
 
@@ -82,8 +86,8 @@ def get_farm_weather_route(farm_id: int, db: Session = Depends(get_db), current_
 def _get_latest_moisture_with_timestamp(db: Session, farm_id: int):
     """
     Shared helper: finds the farm's soil-moisture sensor (if any) and its
-    most recent reading + timestamp. Used by both the prediction and
-    schedule routes so staleness handling stays consistent between them.
+    most recent reading + timestamp. Used by the prediction, schedule, and
+    alerts routes so staleness handling stays consistent across all three.
     """
     latest_moisture = None
     reading_recorded_at = None
@@ -186,3 +190,57 @@ def get_farm_schedule_route(
     weather = WeatherResponse(**weather_dict)
 
     return generate_irrigation_schedule(prediction, weather)
+
+
+@router.get("/{farm_id}/alerts", response_model=AlertsResponse)
+def get_farm_alerts_route(
+    farm_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.user_id == current_user.id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+
+    try:
+        weather_dict = get_farm_weather(farm.id, farm.latitude, farm.longitude)
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Weather data is required to check alerts, and is currently unavailable.",
+        )
+
+    latest_moisture, reading_recorded_at = _get_latest_moisture_with_timestamp(db, farm.id)
+    previous_irrigation_mm = _get_previous_irrigation_mm(db, farm.id)
+
+    try:
+        prediction_dict = predict_irrigation(
+            farm, weather_dict, latest_moisture, reading_recorded_at, previous_irrigation_mm
+        )
+    except ModelNotAvailableError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    prediction = PredictionResponse(**prediction_dict)
+    weather = WeatherResponse(**weather_dict)
+    schedule = generate_irrigation_schedule(prediction, weather)
+
+    one_week_ago = datetime.utcnow() - timedelta(days=7)
+    recent_events = (
+        db.query(IrrigationEvent)
+        .filter(IrrigationEvent.farm_id == farm.id, IrrigationEvent.irrigated_at >= one_week_ago)
+        .all()
+    )
+    recent_events_data = [
+        {"water_amount_mm": e.water_amount_mm, "irrigated_at": e.irrigated_at}
+        for e in recent_events
+    ]
+
+    alerts = evaluate_alerts(
+        prediction=prediction_dict,
+        schedule=schedule.model_dump(),
+        recent_irrigation_events=recent_events_data,
+        latest_sensor_reading_at=reading_recorded_at,
+        weather=weather_dict,
+    )
+
+    return AlertsResponse(farm_id=farm.id, alert_count=len(alerts), alerts=alerts)
