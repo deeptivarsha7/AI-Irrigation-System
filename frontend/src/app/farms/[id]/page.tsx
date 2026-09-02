@@ -11,6 +11,7 @@ import {
   getSensorReadings,
   createSensor,
   Sensor,
+  SensorReading,
   getPrediction,
   Prediction,
   getIrrigationEvents,
@@ -21,6 +22,17 @@ import {
   ScheduleEvent,
 } from "@/lib/api";
 import { COLORS } from "@/lib/theme";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 interface WeatherData {
   temperature: number;
@@ -336,6 +348,51 @@ function ScheduleSection({ farmId }: { farmId: number }) {
   );
 }
 
+function WeeklyIrrigationChart({ events }: { events: IrrigationEvent[] }) {
+  const days: { label: string; date: string; mm: number }[] = [];
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateKey = d.toISOString().slice(0, 10);
+    days.push({
+      label: d.toLocaleDateString("en-US", { weekday: "short" }),
+      date: dateKey,
+      mm: 0,
+    });
+  }
+
+  events.forEach((event) => {
+    const dateKey = event.irrigated_at.slice(0, 10);
+    const day = days.find((d) => d.date === dateKey);
+    if (day) day.mm += event.water_amount_mm;
+  });
+
+  const hasAnyData = days.some((d) => d.mm > 0);
+
+  if (!hasAnyData) return null;
+
+  return (
+    <div className="mb-4 rounded-2xl p-4" style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}12` }}>
+      <p className="text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+        Last 7 days
+      </p>
+      <ResponsiveContainer width="100%" height={140}>
+        <BarChart data={days} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={`${COLORS.forest}15`} vertical={false} />
+          <XAxis dataKey="label" tick={{ fontSize: 11, fill: COLORS.ink, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 10, fill: COLORS.ink, fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} width={30} />
+          <Tooltip
+            formatter={(value) => [`${value} mm`, "Irrigated"]}
+            contentStyle={{ borderRadius: 10, border: `1px solid ${COLORS.forest}20`, fontFamily: "var(--font-body)", fontSize: 12 }}
+          />
+          <Bar dataKey="mm" fill={COLORS.water} radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function IrrigationHistorySection({ farmId }: { farmId: number }) {
   const [events, setEvents] = useState<IrrigationEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -469,34 +526,69 @@ function IrrigationHistorySection({ farmId }: { farmId: number }) {
       )}
 
       {!loading && events.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {events.slice(0, 5).map((event) => (
-            <div
-              key={event.id}
-              className="flex items-center justify-between rounded-xl px-4 py-3"
-              style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}12` }}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-lg">💧</span>
-                <div>
-                  <p className="text-sm font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-body)" }}>
-                    {event.water_amount_mm} mm
-                  </p>
-                  <p className="text-xs" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
-                    {formatWhen(event.irrigated_at)}
-                  </p>
-                </div>
-              </div>
-              <span
-                className="text-[10px] uppercase font-bold px-2 py-1 rounded-full"
-                style={{ backgroundColor: `${COLORS.forest}10`, color: COLORS.forest, fontFamily: "var(--font-mono)" }}
+        <>
+          <WeeklyIrrigationChart events={events} />
+          <div className="flex flex-col gap-2">
+            {events.slice(0, 5).map((event) => (
+              <div
+                key={event.id}
+                className="flex items-center justify-between rounded-xl px-4 py-3"
+                style={{ backgroundColor: COLORS.cream, border: `1px solid ${COLORS.forest}12` }}
               >
-                {event.source}
-              </span>
-            </div>
-          ))}
-        </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-lg">💧</span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: COLORS.forestDeep, fontFamily: "var(--font-body)" }}>
+                      {event.water_amount_mm} mm
+                    </p>
+                    <p className="text-xs" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+                      {formatWhen(event.irrigated_at)}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className="text-[10px] uppercase font-bold px-2 py-1 rounded-full"
+                  style={{ backgroundColor: `${COLORS.forest}10`, color: COLORS.forest, fontFamily: "var(--font-mono)" }}
+                >
+                  {event.source}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+function SensorTimelineChart({ readings, sensorType }: { readings: SensorReading[]; sensorType: string }) {
+  if (readings.length < 2) return null;
+
+  const chartData = [...readings]
+    .sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime())
+    .slice(-20)
+    .map((r) => ({
+      time: new Date(r.recorded_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      value: r.value,
+    }));
+
+  const lineColor = sensorType === "soil_moisture" ? COLORS.water : sensorType === "temperature" ? COLORS.sunDeep : COLORS.leafDeep;
+
+  return (
+    <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${COLORS.forest}10` }}>
+      <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: `${COLORS.ink}60`, fontFamily: "var(--font-mono)" }}>
+        Trend
+      </p>
+      <ResponsiveContainer width="100%" height={80}>
+        <LineChart data={chartData} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+          <Tooltip
+            formatter={(value) => [value, sensorTypeLabel(sensorType)]}
+            contentStyle={{ borderRadius: 10, border: `1px solid ${COLORS.forest}20`, fontFamily: "var(--font-body)", fontSize: 11 }}
+            labelStyle={{ fontSize: 10 }}
+          />
+          <Line type="monotone" dataKey="value" stroke={lineColor} strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -504,6 +596,7 @@ function IrrigationHistorySection({ farmId }: { farmId: number }) {
 function SensorsSection({ farmId }: { farmId: number }) {
   const [sensors, setSensors] = useState<Sensor[]>([]);
   const [latestReadings, setLatestReadings] = useState<Record<number, number | null>>({});
+  const [allReadings, setAllReadings] = useState<Record<number, SensorReading[]>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [sensorType, setSensorType] = useState("soil_moisture");
@@ -519,17 +612,21 @@ function SensorsSection({ farmId }: { farmId: number }) {
       setSensors(forFarm);
 
       const readings: Record<number, number | null> = {};
+      const fullReadings: Record<number, SensorReading[]> = {};
       await Promise.all(
         forFarm.map(async (s) => {
           try {
             const r = await getSensorReadings(s.id);
             readings[s.id] = r.length > 0 ? r[0].value : null;
+            fullReadings[s.id] = r;
           } catch {
             readings[s.id] = null;
+            fullReadings[s.id] = [];
           }
         })
       );
       setLatestReadings(readings);
+      setAllReadings(fullReadings);
     } finally {
       setLoading(false);
     }
@@ -675,6 +772,7 @@ function SensorsSection({ farmId }: { farmId: number }) {
                   {latestReadings[sensor.id] != null && sensor.sensor_type === "soil_moisture" ? "%" : ""}
                 </p>
               </div>
+              <SensorTimelineChart readings={allReadings[sensor.id] ?? []} sensorType={sensor.sensor_type} />
             </div>
           ))}
         </div>

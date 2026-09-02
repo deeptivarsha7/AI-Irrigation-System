@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/context/AuthContext";
-import { getFarms, Farm } from "@/lib/api";
+import { getFarms, getSensors, getSensorReadings, Farm } from "@/lib/api";
 import { COLORS } from "@/lib/theme";
 
 const SOIL_ICONS: Record<string, string> = {
@@ -24,11 +24,72 @@ function soilIcon(soilType: string) {
   return SOIL_ICONS[key] ?? "🌱";
 }
 
+// Mirrors backend's SOIL_MOISTURE_DEFAULTS (prediction_service.py) — the
+// "normal" moisture midpoint differs genuinely by soil type (sandy soil
+// naturally holds far less water than peaty soil), so status has to be
+// judged relative to each soil's own baseline, not one flat number for
+// every farm.
+const SOIL_MOISTURE_DEFAULTS: Record<string, number> = {
+  sandy: 15.0,
+  loamy: 30.0,
+  clay: 38.0,
+  silty: 32.0,
+  peaty: 45.0,
+  chalky: 20.0,
+  black: 35.0,
+  red: 22.0,
+  alluvial: 33.0,
+};
+
+// Same threshold used server-side (prediction_service.py) for deciding
+// whether a sensor reading is still trustworthy as "live."
+const STALE_THRESHOLD_HOURS = 6;
+
+type StatusKey = "red" | "yellow" | "green" | "unknown";
+
+interface FieldStatus {
+  status: StatusKey;
+  label: string;
+  color: string;
+  bg: string;
+  icon: string;
+}
+
+const STATUS_META: Record<StatusKey, Omit<FieldStatus, "status">> = {
+  red: { label: "Needs water", color: COLORS.clay, bg: `${COLORS.clay}18`, icon: "🔴" },
+  yellow: { label: "Getting dry", color: COLORS.sunDeep, bg: `${COLORS.sunDeep}18`, icon: "🟡" },
+  green: { label: "Well watered", color: COLORS.leafDeep, bg: `${COLORS.leafDeep}18`, icon: "🟢" },
+  unknown: { label: "No sensor data", color: `${COLORS.ink}70`, bg: `${COLORS.ink}0c`, icon: "⚪" },
+};
+
+function computeStatus(
+  soilType: string,
+  latestValue: number | null,
+  recordedAt: string | null
+): FieldStatus {
+  const isStale =
+    recordedAt !== null &&
+    Date.now() - new Date(recordedAt).getTime() > STALE_THRESHOLD_HOURS * 60 * 60 * 1000;
+
+  if (latestValue === null || isStale) {
+    return { status: "unknown", ...STATUS_META.unknown };
+  }
+
+  const baseline = SOIL_MOISTURE_DEFAULTS[soilType.toLowerCase().trim()] ?? 25.0;
+  const ratio = latestValue / baseline;
+
+  if (ratio < 0.6) return { status: "red", ...STATUS_META.red };
+  if (ratio < 0.9) return { status: "yellow", ...STATUS_META.yellow };
+  return { status: "green", ...STATUS_META.green };
+}
+
 function DashboardContent() {
   const { logout } = useAuth();
   const [farms, setFarms] = useState<Farm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [statuses, setStatuses] = useState<Record<number, FieldStatus>>({});
+  const [statusesLoading, setStatusesLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
@@ -43,6 +104,62 @@ function DashboardContent() {
     }
     load();
   }, []);
+
+  // Loads soil-moisture status per farm, once farms are known. Runs as a
+  // separate, non-blocking pass: the farm cards render immediately with
+  // whatever data they already have, and each card's status badge fills
+  // in as soon as this resolves — status data shouldn't gate the whole
+  // dashboard's first paint.
+  useEffect(() => {
+    if (farms.length === 0) {
+      setStatusesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStatuses() {
+      setStatusesLoading(true);
+      try {
+        const allSensors = await getSensors();
+        const results: Record<number, FieldStatus> = {};
+
+        await Promise.all(
+          farms.map(async (farm) => {
+            const moistureSensor = allSensors.find(
+              (s) => s.farm_id === farm.id && s.sensor_type === "soil_moisture"
+            );
+
+            if (!moistureSensor) {
+              results[farm.id] = { status: "unknown", ...STATUS_META.unknown };
+              return;
+            }
+
+            try {
+              const readings = await getSensorReadings(moistureSensor.id);
+              const latest = readings.length > 0 ? readings[0] : null;
+              results[farm.id] = computeStatus(
+                farm.soil_type,
+                latest ? latest.value : null,
+                latest ? latest.recorded_at : null
+              );
+            } catch {
+              results[farm.id] = { status: "unknown", ...STATUS_META.unknown };
+            }
+          })
+        );
+
+        if (!cancelled) setStatuses(results);
+      } finally {
+        if (!cancelled) setStatusesLoading(false);
+      }
+    }
+
+    loadStatuses();
+    return () => {
+      cancelled = true;
+    };
+  }, [farms]);
 
   const totalHectares = farms.reduce((sum, f) => sum + f.area_hectares, 0);
 
@@ -211,7 +328,6 @@ function DashboardContent() {
                 border: `1px solid ${COLORS.forest}18`,
               }}
             >
-              {/* faint dot backdrop */}
               <svg className="absolute inset-0 w-full h-full opacity-[0.1]" width="100%" height="100%">
                 <defs>
                   <pattern id="monitorgrid" width="16" height="16" patternUnits="userSpaceOnUse">
@@ -221,10 +337,8 @@ function DashboardContent() {
                 <rect width="100%" height="100%" fill="url(#monitorgrid)" />
               </svg>
 
-              {/* scanning sweep */}
               <div className="scan-line" style={{ background: `linear-gradient(90deg, transparent, ${COLORS.water}, transparent)` }} />
 
-              {/* tile grid */}
               <div className="relative z-10 grid grid-cols-3 grid-rows-2 gap-2.5 h-full">
                 {[1, 2, 3, 4, 5, 6].map((n) => (
                   <div
@@ -254,62 +368,107 @@ function DashboardContent() {
         )}
 
         {!loading && !error && farms.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {farms.map((farm) => (
-              <Link
-                key={farm.id}
-                href={`/farms/${farm.id}`}
-                className="farm-card rounded-2xl p-5 block relative overflow-hidden"
-                style={{
-                  backgroundColor: COLORS.cream,
-                  boxShadow: `0 12px 28px -14px ${COLORS.forest}35`,
-                  border: `1px solid ${COLORS.forest}14`,
-                }}
-              >
-                <div
-                  className="absolute top-0 left-0 right-0 h-[5px]"
-                  style={{ background: `linear-gradient(90deg, ${COLORS.leaf}, ${COLORS.sun})` }}
-                />
-                <div className="flex items-start justify-between mt-2">
-                  <h3
-                    className="text-lg font-bold leading-snug"
-                    style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}
-                  >
-                    {farm.name}
-                  </h3>
-                  <span className="text-xl leading-none" aria-hidden="true">
-                    {soilIcon(farm.soil_type)}
-                  </span>
-                </div>
-                <p
-                  className="text-sm mt-1 flex items-center gap-1"
-                  style={{ color: `${COLORS.ink}80`, fontFamily: "var(--font-body)" }}
-                >
-                  📍 {farm.location}
-                </p>
-                <div className="flex flex-wrap items-center gap-2 mt-4 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
+          <>
+            {/* Legend — makes the colour coding self-explanatory rather than decorative */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-5 px-1">
+              {(["green", "yellow", "red", "unknown"] as StatusKey[]).map((key) => (
+                <div key={key} className="flex items-center gap-1.5">
                   <span
-                    className="px-2.5 py-1 rounded-full font-semibold"
-                    style={{ backgroundColor: `${COLORS.leafDeep}15`, color: COLORS.leafDeep }}
-                  >
-                    {farm.area_hectares} ha
-                  </span>
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: STATUS_META[key].color }}
+                  />
                   <span
-                    className="px-2.5 py-1 rounded-full font-semibold capitalize"
-                    style={{ backgroundColor: `${COLORS.forest}12`, color: COLORS.forest }}
+                    className="text-xs font-medium"
+                    style={{ color: `${COLORS.ink}80`, fontFamily: "var(--font-body)" }}
                   >
-                    {farm.soil_type} soil
+                    {STATUS_META[key].label}
                   </span>
                 </div>
-                <div
-                  className="mt-4 pt-3 text-xs font-semibold flex items-center gap-1"
-                  style={{ borderTop: `1px solid ${COLORS.forest}12`, color: COLORS.terracotta, fontFamily: "var(--font-body)" }}
-                >
-                  View field details →
-                </div>
-              </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              {farms.map((farm) => {
+                const status = statuses[farm.id];
+                const statusColor = status ? status.color : `${COLORS.ink}40`;
+
+                return (
+                  <Link
+                    key={farm.id}
+                    href={`/farms/${farm.id}`}
+                    className="farm-card rounded-2xl p-5 block relative overflow-hidden"
+                    style={{
+                      backgroundColor: COLORS.cream,
+                      boxShadow: `0 12px 28px -14px ${COLORS.forest}35`,
+                      border: `1px solid ${COLORS.forest}14`,
+                    }}
+                  >
+                    <div
+                      className="absolute top-0 left-0 right-0 h-[5px] transition-colors duration-500"
+                      style={{ background: `linear-gradient(90deg, ${statusColor}, ${COLORS.sun})` }}
+                    />
+                    <div className="flex items-start justify-between mt-2">
+                      <h3
+                        className="text-lg font-bold leading-snug"
+                        style={{ color: COLORS.forestDeep, fontFamily: "var(--font-display)" }}
+                      >
+                        {farm.name}
+                      </h3>
+                      <span className="text-xl leading-none" aria-hidden="true">
+                        {soilIcon(farm.soil_type)}
+                      </span>
+                    </div>
+                    <p
+                      className="text-sm mt-1 flex items-center gap-1"
+                      style={{ color: `${COLORS.ink}80`, fontFamily: "var(--font-body)" }}
+                    >
+                      📍 {farm.location}
+                    </p>
+
+                    {/* Soil-moisture status badge */}
+                    <div className="mt-3">
+                      {statusesLoading && !status ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full animate-pulse"
+                          style={{ backgroundColor: `${COLORS.ink}08`, color: `${COLORS.ink}50`, fontFamily: "var(--font-body)" }}
+                        >
+                          Checking status…
+                        </span>
+                      ) : status ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full"
+                          style={{ backgroundColor: status.bg, color: status.color, fontFamily: "var(--font-body)" }}
+                        >
+                          {status.icon} {status.label}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 mt-3 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
+                      <span
+                        className="px-2.5 py-1 rounded-full font-semibold"
+                        style={{ backgroundColor: `${COLORS.leafDeep}15`, color: COLORS.leafDeep }}
+                      >
+                        {farm.area_hectares} ha
+                      </span>
+                      <span
+                        className="px-2.5 py-1 rounded-full font-semibold capitalize"
+                        style={{ backgroundColor: `${COLORS.forest}12`, color: COLORS.forest }}
+                      >
+                        {farm.soil_type} soil
+                      </span>
+                    </div>
+                    <div
+                      className="mt-4 pt-3 text-xs font-semibold flex items-center gap-1"
+                      style={{ borderTop: `1px solid ${COLORS.forest}12`, color: COLORS.terracotta, fontFamily: "var(--font-body)" }}
+                    >
+                      View field details →
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
@@ -324,7 +483,6 @@ function DashboardContent() {
           border-color: ${COLORS.leaf}50;
         }
 
-        /* scanning sweep line */
         .scan-line {
           position: absolute;
           left: 0; right: 0;
@@ -341,7 +499,6 @@ function DashboardContent() {
           100% { top: 100%; opacity: 0; }
         }
 
-        /* moisture fill, independent oscillation per tile */
         .moisture-fill { animation: moist-wave 4s ease-in-out infinite; }
         .moisture-1 { animation-delay: 0s; }
         .moisture-2 { animation-delay: 0.4s; }
@@ -354,7 +511,6 @@ function DashboardContent() {
           50% { height: 76%; }
         }
 
-        /* irrigation pulse ring, one tile lit at a time across a 6s cycle */
         .tile { transition: border-color 0.2s ease; }
         .tile-ring-1 { animation: ring-1 6s ease-in-out infinite; }
         .tile-ring-2 { animation: ring-2 6s ease-in-out infinite; }
