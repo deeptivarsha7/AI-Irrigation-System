@@ -6,6 +6,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/context/AuthContext";
 import { getFarms, getSensors, getSensorReadings, Farm } from "@/lib/api";
 import { COLORS } from "@/lib/theme";
+import { parseBackendUTC } from "@/lib/dateUtils";
 
 const SOIL_ICONS: Record<string, string> = {
   loamy: "🟤",
@@ -69,7 +70,7 @@ function computeStatus(
 ): FieldStatus {
   const isStale =
     recordedAt !== null &&
-    Date.now() - new Date(recordedAt).getTime() > STALE_THRESHOLD_HOURS * 60 * 60 * 1000;
+    Date.now() - parseBackendUTC(recordedAt).getTime() > STALE_THRESHOLD_HOURS * 60 * 60 * 1000;
 
   if (latestValue === null || isStale) {
     return { status: "unknown", ...STATUS_META.unknown };
