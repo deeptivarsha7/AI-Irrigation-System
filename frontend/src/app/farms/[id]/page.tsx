@@ -24,6 +24,7 @@ import {
   Alert,
 } from "@/lib/api";
 import { COLORS } from "@/lib/theme";
+import { parseBackendUTC } from "@/lib/dateUtils";
 import {
   LineChart,
   Line,
@@ -403,21 +404,27 @@ function ScheduleSection({ farmId }: { farmId: number }) {
 }
 
 function WeeklyIrrigationChart({ events }: { events: IrrigationEvent[] }) {
+  function toLocalDateKey(d: Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
   const days: { label: string; date: string; mm: number }[] = [];
   const today = new Date();
   for (let i = 6; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateKey = d.toISOString().slice(0, 10);
     days.push({
       label: d.toLocaleDateString("en-US", { weekday: "short" }),
-      date: dateKey,
+      date: toLocalDateKey(d),
       mm: 0,
     });
   }
 
   events.forEach((event) => {
-    const dateKey = event.irrigated_at.slice(0, 10);
+    const dateKey = toLocalDateKey(parseBackendUTC(event.irrigated_at));
     const day = days.find((d) => d.date === dateKey);
     if (day) day.mm += event.water_amount_mm;
   });
@@ -493,7 +500,7 @@ function IrrigationHistorySection({ farmId }: { farmId: number }) {
   }
 
   function formatWhen(dateStr: string) {
-    const d = new Date(dateStr);
+    const d = parseBackendUTC(dateStr);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   }
 
@@ -619,10 +626,10 @@ function SensorTimelineChart({ readings, sensorType }: { readings: SensorReading
   if (readings.length < 2) return null;
 
   const chartData = [...readings]
-    .sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime())
+    .sort((a, b) => parseBackendUTC(a.recorded_at).getTime() - parseBackendUTC(b.recorded_at).getTime())
     .slice(-20)
     .map((r) => ({
-      time: new Date(r.recorded_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      time: parseBackendUTC(r.recorded_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       value: r.value,
     }));
 
